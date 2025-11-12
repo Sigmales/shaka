@@ -7,10 +7,12 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '')
+  const defaultAdminEmails = ['yantoubri@gmail.com']
+  const configuredAdminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '')
     .split(',')
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)
+  const adminEmails = Array.from(new Set([...defaultAdminEmails, ...configuredAdminEmails]))
 
   useEffect(() => {
     checkSession()
