@@ -7,6 +7,10 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const adminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
 
   useEffect(() => {
     checkSession()
@@ -74,7 +78,24 @@ export function AuthProvider({ children }) {
         if (insertError) {
           console.error('Error creating default profile:', insertError)
         } else {
-          setProfile(createdProfile)
+          const normalizedEmail = (createdProfile.email || '').toLowerCase()
+          if (adminEmails.includes(normalizedEmail) && createdProfile.subscription_type !== 'admin') {
+            const { data: adminProfile, error: promoteError } = await supabase
+              .from('profiles')
+              .update({ subscription_type: 'admin', subscription_expires_at: null })
+              .eq('id', createdProfile.id)
+              .select()
+              .single()
+
+            if (promoteError) {
+              console.error('Error promoting default profile to admin:', promoteError)
+              setProfile(createdProfile)
+            } else {
+              setProfile(adminProfile)
+            }
+          } else {
+            setProfile(createdProfile)
+          }
         }
         setLoading(false)
         return
@@ -82,7 +103,24 @@ export function AuthProvider({ children }) {
 
       console.error('Error loading profile:', error)
     } else {
-      setProfile(data)
+      const normalizedEmail = (data.email || '').toLowerCase()
+      if (adminEmails.includes(normalizedEmail) && data.subscription_type !== 'admin') {
+        const { data: adminProfile, error: promoteError } = await supabase
+          .from('profiles')
+          .update({ subscription_type: 'admin', subscription_expires_at: null })
+          .eq('id', data.id)
+          .select()
+          .single()
+
+        if (promoteError) {
+          console.error('Error promoting profile to admin:', promoteError)
+          setProfile(data)
+        } else {
+          setProfile(adminProfile)
+        }
+      } else {
+        setProfile(data)
+      }
     }
     setLoading(false)
   }
