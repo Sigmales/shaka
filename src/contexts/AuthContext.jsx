@@ -7,12 +7,8 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const defaultAdminEmails = ['yantoubri@gmail.com']
-  const configuredAdminEmails = (import.meta.env.VITE_ADMIN_EMAILS || '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
-  const adminEmails = Array.from(new Set([...defaultAdminEmails, ...configuredAdminEmails]))
+  const ADMIN_EMAIL = 'yantoubri@gmail.com'
+  const normalizedAdminEmail = ADMIN_EMAIL.toLowerCase()
 
   useEffect(() => {
     checkSession()
@@ -81,7 +77,7 @@ export function AuthProvider({ children }) {
           console.error('Error creating default profile:', insertError)
         } else {
           const normalizedEmail = (createdProfile.email || '').toLowerCase()
-          if (adminEmails.includes(normalizedEmail) && createdProfile.subscription_type !== 'admin') {
+          if (normalizedEmail === normalizedAdminEmail && createdProfile.subscription_type !== 'admin') {
             const { data: adminProfile, error: promoteError } = await supabase
               .from('profiles')
               .update({ subscription_type: 'admin', subscription_expires_at: null })
@@ -95,6 +91,20 @@ export function AuthProvider({ children }) {
             } else {
               setProfile(adminProfile)
             }
+          } else if (normalizedEmail !== normalizedAdminEmail && createdProfile.subscription_type === 'admin') {
+            const { data: downgradedProfile, error: demoteError } = await supabase
+              .from('profiles')
+              .update({ subscription_type: 'free' })
+              .eq('id', createdProfile.id)
+              .select()
+              .single()
+
+            if (demoteError) {
+              console.error('Error demoting profile:', demoteError)
+              setProfile(createdProfile)
+            } else {
+              setProfile(downgradedProfile)
+            }
           } else {
             setProfile(createdProfile)
           }
@@ -106,7 +116,7 @@ export function AuthProvider({ children }) {
       console.error('Error loading profile:', error)
     } else {
       const normalizedEmail = (data.email || '').toLowerCase()
-      if (adminEmails.includes(normalizedEmail) && data.subscription_type !== 'admin') {
+      if (normalizedEmail === normalizedAdminEmail && data.subscription_type !== 'admin') {
         const { data: adminProfile, error: promoteError } = await supabase
           .from('profiles')
           .update({ subscription_type: 'admin', subscription_expires_at: null })
@@ -119,6 +129,20 @@ export function AuthProvider({ children }) {
           setProfile(data)
         } else {
           setProfile(adminProfile)
+        }
+      } else if (normalizedEmail !== normalizedAdminEmail && data.subscription_type === 'admin') {
+        const { data: downgradedProfile, error: demoteError } = await supabase
+          .from('profiles')
+          .update({ subscription_type: 'free' })
+          .eq('id', data.id)
+          .select()
+          .single()
+
+        if (demoteError) {
+          console.error('Error demoting profile:', demoteError)
+          setProfile(data)
+        } else {
+          setProfile(downgradedProfile)
         }
       } else {
         setProfile(data)
@@ -155,6 +179,18 @@ export function AuthProvider({ children }) {
       // Mettre à jour le compteur du code promo
       if (promoCode) {
         await supabase.rpc('increment_promo_usage', { promo_code: promoCode })
+      }
+
+      if ((email || '').toLowerCase() === normalizedAdminEmail) {
+        await supabase
+          .from('profiles')
+          .update({ subscription_type: 'admin', subscription_expires_at: null })
+          .eq('id', data.user.id)
+      } else if ((email || '').toLowerCase() !== normalizedAdminEmail) {
+        await supabase
+          .from('profiles')
+          .update({ subscription_type: promoCode === 'Le226' ? 'vip' : 'free' })
+          .eq('id', data.user.id)
       }
     }
 
