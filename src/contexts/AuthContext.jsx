@@ -14,7 +14,7 @@ export function AuthProvider({ children }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null)
       if (session?.user) {
-        loadProfile(session.user.id)
+        loadProfile(session.user)
       } else {
         setProfile(null)
         setLoading(false)
@@ -28,23 +28,63 @@ export function AuthProvider({ children }) {
     const { data: { session } } = await supabase.auth.getSession()
     setUser(session?.user ?? null)
     if (session?.user) {
-      await loadProfile(session.user.id)
+      await loadProfile(session.user)
     }
     setLoading(false)
   }
 
-  async function loadProfile(userId) {
-    const { data, error } = await supabase
+  async function loadProfile(currentUser) {
+    if (!currentUser?.id) {
+      setProfile(null)
+      setLoading(false)
+      return
+    }
+
+    const { data, error, status } = await supabase
       .from('profiles')
       .select('*')
-      .eq('id', userId)
+      .eq('id', currentUser.id)
       .single()
 
     if (error) {
+      // If the profile row does not exist yet, create a default one on the fly
+      const noRowError = error.code === 'PGRST116' || status === 406
+      if (noRowError) {
+        const defaultFullName =
+          currentUser.user_metadata?.full_name ||
+          currentUser.email?.split('@')[0] ||
+          'Utilisateur'
+
+        const defaultProfile = {
+          id: currentUser.id,
+          email: currentUser.email,
+          full_name: defaultFullName,
+          subscription_type: 'free',
+          subscription_expires_at: null,
+          promo_code_used: null,
+          vip_trial_used: false
+        }
+
+        const { data: createdProfile, error: insertError } = await supabase
+          .from('profiles')
+          .insert([defaultProfile])
+          .select()
+          .single()
+
+        if (insertError) {
+          console.error('Error creating default profile:', insertError)
+        } else {
+          setProfile(createdProfile)
+        }
+        setLoading(false)
+        return
+      }
+
       console.error('Error loading profile:', error)
     } else {
       setProfile(data)
     }
+    setLoading(false)
   }
 
   async function signUp(email, password, fullName, promoCode = null) {
@@ -101,7 +141,7 @@ export function AuthProvider({ children }) {
     signUp,
     signIn,
     signOut,
-    refreshProfile: () => user ? loadProfile(user.id) : null
+    refreshProfile: () => (user ? loadProfile(user) : null)
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
